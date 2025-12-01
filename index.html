@@ -207,26 +207,20 @@
         </div>
     </div>
 
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyBtpZAG2oLhM27Ud9dAJZGGkGnuTI3ty8Y",
-    authDomain: "chatbox-a5f0c.firebaseapp.com",
-    databaseURL: "https://chatbox-a5f0c-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "chatbox-a5f0c",
-    storageBucket: "chatbox-a5f0c.firebasestorage.app",
-    messagingSenderId: "917869044646",
-    appId: "1:917869044646:web:ce32809b936e8d54866567",
-    measurementId: "G-ZVQPC9CPNB"
-  };
-
+    <script>
+        // ========================================
+        // Firebase 配置 - 已配置完成
+        // ========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBtpZAG2oLhM27Ud9dAJZGGkGnuTI3ty8Y",
+            authDomain: "chatbox-a5f0c.firebaseapp.com",
+            databaseURL: "https://chatbox-a5f0c-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "chatbox-a5f0c",
+            storageBucket: "chatbox-a5f0c.firebasestorage.app",
+            messagingSenderId: "917869044646",
+            appId: "1:917869044646:web:ce32809b936e8d54866567",
+            measurementId: "G-ZVQPC9CPNB"
+        };
 
         // 初始化 Firebase
         let database;
@@ -621,10 +615,10 @@
             generateMathQuestion();
             document.getElementById('messageInput').addEventListener('input', updateCharCount);
             
-            // 防止表单自动提交
+            // 防止表单自动提交 - 按Enter键开始配对
             document.getElementById('mathAnswer').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
-                    startChat();
+                    startMatching();
                 }
             });
         });
