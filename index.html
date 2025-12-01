@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WooTalk - 随机匿名聊天</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        .chat-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .typing-indicator {
+            display: inline-block;
+        }
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #94a3b8;
+            margin: 0 2px;
+            animation: blink 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes blink {
+            0%, 60%, 100% { opacity: 0.3; }
+            30% { opacity: 1; }
+        }
+        .pulse-dot {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 min-h-screen">
+    
+    <!-- 欢迎页面 -->
+    <div id="welcomePage" class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-5xl font-bold gradient-text mb-3">💬 WooTalk</h1>
+                <p class="text-gray-600 text-lg">与陌生人随机聊天</p>
+            </div>
+            
+            <div class="space-y-3 mb-6 bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg">
+                <div class="flex items-center space-x-2 text-sm text-gray-700">
+                    <span class="text-xl">🎭</span>
+                    <span><strong>完全匿名</strong> - 无需注册登录</span>
+                </div>
+                <div class="flex items-center space-x-2 text-sm text-gray-700">
+                    <span class="text-xl">🎲</span>
+                    <span><strong>随机配对</strong> - 一对一私密聊天</span>
+                </div>
+                <div class="flex items-center space-x-2 text-sm text-gray-700">
+                    <span class="text-xl">⚡</span>
+                    <span><strong>快速切换</strong> - 不喜欢就下一位</span>
+                </div>
+                <div class="flex items-center space-x-2 text-sm text-gray-700">
+                    <span class="text-xl">🛡️</span>
+                    <span><strong>安全保护</strong> - 防机器人机制</span>
+                </div>
+            </div>
+
+            <!-- 防机器人验证 -->
+            <div id="verification" class="mb-6 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                <p class="text-sm text-gray-700 mb-3 font-semibold">🤖 请完成验证：</p>
+                <div class="flex items-center space-x-2">
+                    <span id="mathQuestion" class="text-xl font-bold text-gray-800"></span>
+                    <input 
+                        type="number" 
+                        id="mathAnswer" 
+                        class="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 focus:outline-none text-lg"
+                        placeholder="答案">
+                </div>
+                <p id="verifyError" class="text-red-500 text-sm mt-2 hidden">❌ 验证失败，请重试</p>
+            </div>
+
+            <button 
+                onclick="startMatching()"
+                class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition duration-300 transform hover:scale-105 shadow-lg text-lg">
+                🚀 开始配对
+            </button>
+            
+            <p class="text-center text-xs text-gray-500 mt-4">
+                点击开始即表示您同意遵守聊天规则
+            </p>
+        </div>
+    </div>
+
+    <!-- 等待配对页面 -->
+    <div id="matchingPage" class="hidden flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-12 max-w-md w-full text-center">
+            <div class="mb-8">
+                <div class="inline-block relative">
+                    <div class="w-24 h-24 border-8 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl">
+                        🔍
+                    </div>
+                </div>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-gray-800 mb-3">正在寻找对话对象...</h2>
+            <p class="text-gray-600 mb-6">请稍候，正在为您随机配对陌生人</p>
+            
+            <div class="flex items-center justify-center space-x-1 mb-6">
+                <span class="pulse-dot w-3 h-3 bg-purple-600 rounded-full"></span>
+                <span class="pulse-dot w-3 h-3 bg-purple-600 rounded-full" style="animation-delay: 0.2s;"></span>
+                <span class="pulse-dot w-3 h-3 bg-purple-600 rounded-full" style="animation-delay: 0.4s;"></span>
+            </div>
+            
+            <button 
+                onclick="cancelMatching()"
+                class="text-gray-500 hover:text-gray-700 font-semibold underline">
+                取消配对
+            </button>
+        </div>
+    </div>
+
+    <!-- 聊天页面 -->
+    <div id="chatPage" class="hidden flex flex-col h-screen">
+        <!-- 头部 -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg p-4">
+            <div class="max-w-4xl mx-auto flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                    <div>
+                        <h2 class="text-xl font-bold text-white">与陌生人聊天中</h2>
+                        <p id="connectionStatus" class="text-xs text-purple-100">
+                            ✓ 已连接
+                        </p>
+                    </div>
+                </div>
+                <div class="flex space-x-2">
+                    <button 
+                        onclick="nextStranger()"
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">
+                        ⏭️ 下一位
+                    </button>
+                    <button 
+                        onclick="leaveChat()"
+                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">
+                        🚪 离开
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 聊天消息区 -->
+        <div class="flex-1 overflow-y-auto p-4" id="chatMessages">
+            <div class="max-w-4xl mx-auto space-y-4">
+                <div class="text-center text-gray-500 text-sm py-4">
+                    <p>欢迎来到匿名聊天室！请遵守聊天规则，文明交流。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="bg-white shadow-lg p-4">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex space-x-2">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        maxlength="500"
+                        placeholder="输入消息... (最多500字)"
+                        class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        onkeypress="handleKeyPress(event)">
+                    <button 
+                        onclick="sendMessage()"
+                        id="sendButton"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
+                        发送
+                    </button>
+                </div>
+                <div class="flex justify-between items-center mt-2 text-xs text-gray-500">
+                    <span id="charCount">0/500</span>
+                    <span id="cooldownMessage" class="text-red-500 hidden"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyBtpZAG2oLhM27Ud9dAJZGGkGnuTI3ty8Y",
+    authDomain: "chatbox-a5f0c.firebaseapp.com",
+    databaseURL: "https://chatbox-a5f0c-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "chatbox-a5f0c",
+    storageBucket: "chatbox-a5f0c.firebasestorage.app",
+    messagingSenderId: "917869044646",
+    appId: "1:917869044646:web:ce32809b936e8d54866567",
+    measurementId: "G-ZVQPC9CPNB"
+  };
+
+
+        // 初始化 Firebase
+        let database;
+        let isFirebaseConnected = false;
+        
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            
+            // 测试连接
+            database.ref('.info/connected').on('value', (snapshot) => {
+                isFirebaseConnected = snapshot.val() === true;
+                if (isFirebaseConnected) {
+                    console.log('✅ Firebase 已连接');
+                } else {
+                    console.log('❌ Firebase 连接失败，使用演示模式');
+                }
+            });
+        } catch (error) {
+            console.log('⚠️ Firebase 未配置，使用演示模式');
+            isFirebaseConnected = false;
+        }
+
+        // 用户数据
+        let currentUser = {
+            id: null,
+            name: null,
+            lastMessageTime: 0,
+            messageCount: 0,
+            partnerId: null
+        };
+
+        // 配对状态
+        let matchingState = {
+            isMatching: false,
+            matchTimeout: null
+        };
+
+        // 防洗版配置
+        const ANTI_SPAM = {
+            MIN_MESSAGE_INTERVAL: 2000, // 最少2秒才能发送下一条消息
+            MAX_MESSAGES_PER_MINUTE: 10, // 每分钟最多10条消息
+            MAX_MESSAGE_LENGTH: 500,
+            messageTimestamps: []
+        };
+
+        // 数学验证
+        let mathAnswer = 0;
+
+        function generateMathQuestion() {
+            const num1 = Math.floor(Math.random() * 10) + 1;
+            const num2 = Math.floor(Math.random() * 10) + 1;
+            mathAnswer = num1 + num2;
+            document.getElementById('mathQuestion').textContent = `${num1} + ${num2} = ?`;
+        }
+
+        function generateUserIdentity() {
+            const adjectives = ['快乐的', '神秘的', '勇敢的', '聪明的', '友善的', '酷炫的', '温柔的', '有趣的'];
+            const nouns = ['熊猫', '狐狸', '猫咪', '兔子', '企鹅', '海豚', '考拉', '松鼠'];
+            const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const noun = nouns[Math.floor(Math.random() * nouns.length)];
+            const num = Math.floor(Math.random() * 1000);
+            return `${adj}${noun}${num}`;
+        }
+
+        // 开始配对流程
+        function startMatching() {
+            const userAnswer = parseInt(document.getElementById('mathAnswer').value);
+            
+            // 验证答案
+            if (userAnswer !== mathAnswer) {
+                document.getElementById('verifyError').classList.remove('hidden');
+                generateMathQuestion();
+                document.getElementById('mathAnswer').value = '';
+                return;
+            }
+
+            // 生成用户身份
+            currentUser.id = Date.now();
+            currentUser.name = generateUserIdentity();
+            
+            // 进入配对页面
+            document.getElementById('welcomePage').classList.add('hidden');
+            document.getElementById('matchingPage').classList.remove('hidden');
+            
+            matchingState.isMatching = true;
+            
+            // 模拟配对（2-5秒后匹配成功）
+            const matchDelay = 2000 + Math.random() * 3000;
+            matchingState.matchTimeout = setTimeout(() => {
+                matchFound();
+            }, matchDelay);
+        }
+
+        // 找到配对
+        function matchFound() {
+            matchingState.isMatching = false;
+            currentUser.partnerId = 'stranger_' + Math.floor(Math.random() * 10000);
+            
+            // 进入聊天页面
+            document.getElementById('matchingPage').classList.add('hidden');
+            document.getElementById('chatPage').classList.remove('hidden');
+
+            // 清空之前的消息
+            clearMessages();
+
+            // 添加系统消息
+            addSystemMessage('✅ 已连接到陌生人！');
+            addSystemMessage('💡 提示：文明聊天，尊重他人');
+
+            // 模拟对方打招呼
+            setTimeout(() => {
+                showTypingIndicator();
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    addMessage('陌生人', getRandomGreeting(), false);
+                }, 1500);
+            }, 1000);
+        }
+
+        // 取消配对
+        function cancelMatching() {
+            if (matchingState.matchTimeout) {
+                clearTimeout(matchingState.matchTimeout);
+            }
+            matchingState.isMatching = false;
+            location.reload();
+        }
+
+        // 下一位（重新配对）
+        function nextStranger() {
+            if (confirm('确定要离开当前对话，寻找下一位陌生人吗？')) {
+                addSystemMessage('🔄 陌生人已离开，正在为您寻找新的对话对象...');
+                
+                // 禁用输入
+                document.getElementById('messageInput').disabled = true;
+                document.getElementById('sendButton').disabled = true;
+                
+                setTimeout(() => {
+                    // 清空消息
+                    clearMessages();
+                    
+                    // 启用输入
+                    document.getElementById('messageInput').disabled = false;
+                    document.getElementById('sendButton').disabled = false;
+                    
+                    // 重新配对
+                    matchFound();
+                }, 2000);
+            }
+        }
+
+        // 清空消息
+        function clearMessages() {
+            const messagesDiv = document.getElementById('chatMessages').firstElementChild;
+            messagesDiv.innerHTML = '';
+        }
+
+        // 显示"正在输入"指示器
+        function showTypingIndicator() {
+            const messagesDiv = document.getElementById('chatMessages').firstElementChild;
+            const typingEl = document.createElement('div');
+            typingEl.id = 'typingIndicator';
+            typingEl.className = 'chat-message flex justify-start';
+            typingEl.innerHTML = `
+                <div class="bg-gray-100 rounded-lg px-4 py-2 shadow">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            messagesDiv.appendChild(typingEl);
+            scrollToBottom();
+        }
+
+        // 隐藏"正在输入"指示器
+        function hideTypingIndicator() {
+            const typingEl = document.getElementById('typingIndicator');
+            if (typingEl) {
+                typingEl.remove();
+            }
+        }
+
+        // 随机问候语
+        function getRandomGreeting() {
+            const greetings = [
+                '嗨！👋',
+                '你好啊！',
+                'Hello~',
+                '哈喽！😊',
+                '嗨嗨！',
+                'Hi there!',
+                '你好呀~',
+                '很高兴认识你！'
+            ];
+            return greetings[Math.floor(Math.random() * greetings.length)];
+        }
+
+        function startChat() {
+            const userAnswer = parseInt(document.getElementById('mathAnswer').value);
+            
+            // 验证答案
+            if (userAnswer !== mathAnswer) {
+                document.getElementById('verifyError').classList.remove('hidden');
+                generateMathQuestion();
+                document.getElementById('mathAnswer').value = '';
+                return;
+            }
+
+            // 生成用户身份
+            currentUser.id = Date.now();
+            currentUser.name = generateUserIdentity();
+            
+            document.getElementById('userIdentity').textContent = currentUser.name;
+            document.getElementById('welcomePage').classList.add('hidden');
+            document.getElementById('chatPage').classList.remove('hidden');
+
+            // 添加欢迎消息
+            addSystemMessage(`${currentUser.name} 加入了聊天室`);
+
+            // 模拟其他用户消息（演示用）
+            setTimeout(() => {
+                addMessage('神秘的狐狸42', '大家好！👋', false);
+            }, 2000);
+        }
+
+        function leaveChat() {
+            if (confirm('确定要离开聊天室吗？')) {
+                addSystemMessage(`${currentUser.name} 离开了聊天室`);
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
+            }
+        }
+
+        function checkSpamProtection() {
+            const now = Date.now();
+            
+            // 检查消息发送间隔
+            if (now - currentUser.lastMessageTime < ANTI_SPAM.MIN_MESSAGE_INTERVAL) {
+                const remaining = Math.ceil((ANTI_SPAM.MIN_MESSAGE_INTERVAL - (now - currentUser.lastMessageTime)) / 1000);
+                showCooldown(`请等待 ${remaining} 秒后再发送`);
+                return false;
+            }
+
+            // 检查每分钟消息数量
+            ANTI_SPAM.messageTimestamps = ANTI_SPAM.messageTimestamps.filter(time => now - time < 60000);
+            if (ANTI_SPAM.messageTimestamps.length >= ANTI_SPAM.MAX_MESSAGES_PER_MINUTE) {
+                showCooldown('发送太频繁，请稍后再试');
+                return false;
+            }
+
+            return true;
+        }
+
+        function showCooldown(message) {
+            const cooldownEl = document.getElementById('cooldownMessage');
+            cooldownEl.textContent = message;
+            cooldownEl.classList.remove('hidden');
+            setTimeout(() => {
+                cooldownEl.classList.add('hidden');
+            }, 3000);
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // 防洗版检查
+            if (!checkSpamProtection()) return;
+
+            // 添加消息（显示为"你"）
+            addMessage('你', message, true);
+            
+            // 更新防洗版数据
+            currentUser.lastMessageTime = Date.now();
+            ANTI_SPAM.messageTimestamps.push(Date.now());
+
+            input.value = '';
+            updateCharCount();
+
+            // 模拟陌生人回复（演示用）
+            // 30% 几率对方正在输入
+            if (Math.random() < 0.3) {
+                setTimeout(() => {
+                    showTypingIndicator();
+                    setTimeout(() => {
+                        hideTypingIndicator();
+                        addMessage('陌生人', getRandomResponse(), false);
+                    }, 1500 + Math.random() * 2000);
+                }, 500);
+            } else {
+                // 直接回复
+                setTimeout(() => {
+                    addMessage('陌生人', getRandomResponse(), false);
+                }, 1000 + Math.random() * 3000);
+            }
+        }
+
+        // 随机回复
+        function getRandomResponse() {
+            const responses = [
+                '哈哈哈😂',
+                '有趣！😊',
+                '我也这么想',
+                '说得对！',
+                '真的吗？',
+                '嗯嗯',
+                '然后呢？',
+                '哇！',
+                '👍',
+                '好的！',
+                '是啊',
+                '确实',
+                '我懂你的意思',
+                '有道理',
+                '厉害！',
+                '😄',
+                '🤔',
+                '太棒了！',
+                '继续说~',
+                '原来如此'
+            ];
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
+
+        function addMessage(username, message, isCurrentUser) {
+            const messagesDiv = document.getElementById('chatMessages').firstElementChild;
+            const messageEl = document.createElement('div');
+            messageEl.className = `chat-message flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`;
+            
+            const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+            
+            messageEl.innerHTML = `
+                <div class="max-w-xs lg:max-w-md">
+                    <div class="text-xs ${isCurrentUser ? 'text-right' : 'text-left'} mb-1">
+                        <span class="font-semibold ${isCurrentUser ? 'text-indigo-600' : 'text-gray-600'}">${username}</span>
+                        <span class="text-gray-400 ml-2">${time}</span>
+                    </div>
+                    <div class="${isCurrentUser ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800'} rounded-lg px-4 py-2 shadow">
+                        ${escapeHtml(message)}
+                    </div>
+                </div>
+            `;
+            
+            messagesDiv.appendChild(messageEl);
+            scrollToBottom();
+        }
+
+        function addSystemMessage(message) {
+            const messagesDiv = document.getElementById('chatMessages').firstElementChild;
+            const messageEl = document.createElement('div');
+            messageEl.className = 'chat-message text-center';
+            messageEl.innerHTML = `
+                <div class="inline-block bg-gray-200 text-gray-600 text-sm px-4 py-2 rounded-full">
+                    ${escapeHtml(message)}
+                </div>
+            `;
+            messagesDiv.appendChild(messageEl);
+            scrollToBottom();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollToBottom() {
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function updateCharCount() {
+            const input = document.getElementById('messageInput');
+            const count = input.value.length;
+            document.getElementById('charCount').textContent = `${count}/${ANTI_SPAM.MAX_MESSAGE_LENGTH}`;
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            generateMathQuestion();
+            document.getElementById('messageInput').addEventListener('input', updateCharCount);
+            
+            // 防止表单自动提交
+            document.getElementById('mathAnswer').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    startChat();
+                }
+            });
+        });
+
+        // 防止页面意外关闭
+        window.addEventListener('beforeunload', function(e) {
+            if (currentUser.id && !document.getElementById('chatPage').classList.contains('hidden')) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // ========================================
+        // 🔥 真实多人聊天功能（需配置 Firebase）
+        // ========================================
+        
+        let chatRoom = null;
+        let messageListener = null;
+        let partnerStatusListener = null;
+        
+        // 重写 startMatching 函数（真实配对版本）
+        const originalStartMatching = startMatching;
+        startMatching = function() {
+            const userAnswer = parseInt(document.getElementById('mathAnswer').value);
+            
+            if (userAnswer !== mathAnswer) {
+                document.getElementById('verifyError').classList.remove('hidden');
+                generateMathQuestion();
+                document.getElementById('mathAnswer').value = '';
+                return;
+            }
+
+            currentUser.id = 'user_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            currentUser.name = generateUserIdentity();
+            
+            document.getElementById('welcomePage').classList.add('hidden');
+            document.getElementById('matchingPage').classList.remove('hidden');
+            
+            matchingState.isMatching = true;
+            
+            // 如果 Firebase 已连接，使用真实配对
+            if (isFirebaseConnected) {
+                findMatch();
+            } else {
+                // 否则使用演示模式
+                const matchDelay = 2000 + Math.random() * 3000;
+                matchingState.matchTimeout = setTimeout(() => {
+                    matchFound();
+                }, matchDelay);
+            }
+        };
+
+        // 寻找配对
+        function findMatch() {
+            const waitingRef = database.ref('waiting');
+            
+            // 查找等待中的用户
+            waitingRef.once('value', (snapshot) => {
+                const waitingUsers = snapshot.val();
+                let foundPartner = false;
+                
+                if (waitingUsers) {
+                    // 找到第一个等待的用户
+                    for (let userId in waitingUsers) {
+                        if (userId !== currentUser.id) {
+                            // 找到配对对象
+                            foundPartner = true;
+                            const partnerId = userId;
+                            
+                            // 创建聊天室
+                            createChatRoom(currentUser.id, partnerId);
+                            
+                            // 从等待列表中移除配对对象
+                            database.ref('waiting/' + partnerId).remove();
+                            
+                            break;
+                        }
+                    }
+                }
+                
+                if (!foundPartner) {
+                    // 没有找到配对，加入等待列表
+                    database.ref('waiting/' + currentUser.id).set({
+                        id: currentUser.id,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    
+                    // 监听是否有人配对
+                    listenForMatch();
+                }
+            });
+        }
+
+        // 监听配对
+        function listenForMatch() {
+            const userRef = database.ref('waiting/' + currentUser.id);
+            
+            // 定期检查是否被配对
+            const checkInterval = setInterval(() => {
+                userRef.once('value', (snapshot) => {
+                    if (!snapshot.exists()) {
+                        // 已被配对，清除等待监听
+                        clearInterval(checkInterval);
+                        
+                        // 查找聊天室
+                        findChatRoom();
+                    }
+                });
+            }, 1000);
+            
+            // 超时后使用演示模式
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                userRef.once('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        // 仍在等待，移除并使用演示模式
+                        userRef.remove();
+                        matchFound(); // 演示模式
+                    }
+                });
+            }, 15000); // 15秒后超时
+        }
+
+        // 查找聊天室
+        function findChatRoom() {
+            database.ref('rooms').orderByChild('user1').equalTo(currentUser.id).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    const rooms = snapshot.val();
+                    const roomId = Object.keys(rooms)[0];
+                    joinChatRoom(roomId);
+                } else {
+                    database.ref('rooms').orderByChild('user2').equalTo(currentUser.id).once('value', (snapshot2) => {
+                        if (snapshot2.exists()) {
+                            const rooms = snapshot2.val();
+                            const roomId = Object.keys(rooms)[0];
+                            joinChatRoom(roomId);
+                        }
+                    });
+                }
+            });
+        }
+
+        // 创建聊天室
+        function createChatRoom(user1Id, user2Id) {
+            const roomId = 'room_' + Date.now();
+            chatRoom = roomId;
+            
+            database.ref('rooms/' + roomId).set({
+                user1: user1Id,
+                user2: user2Id,
+                createdAt: firebase.database.ServerValue.TIMESTAMP,
+                active: true
+            });
+            
+            joinChatRoom(roomId);
+        }
+
+        // 加入聊天室
+        function joinChatRoom(roomId) {
+            chatRoom = roomId;
+            matchingState.isMatching = false;
+            
+            // 进入聊天页面
+            document.getElementById('matchingPage').classList.add('hidden');
+            document.getElementById('chatPage').classList.remove('hidden');
+            
+            clearMessages();
+            addSystemMessage('✅ 已连接到陌生人！');
+            addSystemMessage('💡 提示：文明聊天，尊重他人');
+            
+            // 监听消息
+            listenForMessages();
+            
+            // 监听对方状态
+            listenForPartnerStatus();
+        }
+
+        // 监听消息
+        function listenForMessages() {
+            if (!chatRoom) return;
+            
+            const messagesRef = database.ref('messages/' + chatRoom);
+            
+            messageListener = messagesRef.on('child_added', (snapshot) => {
+                const msg = snapshot.val();
+                
+                if (msg.senderId !== currentUser.id) {
+                    // 对方的消息
+                    hideTypingIndicator();
+                    addMessage('陌生人', msg.text, false);
+                }
+            });
+        }
+
+        // 监听对方状态
+        function listenForPartnerStatus() {
+            if (!chatRoom) return;
+            
+            const roomRef = database.ref('rooms/' + chatRoom);
+            
+            partnerStatusListener = roomRef.on('value', (snapshot) => {
+                const room = snapshot.val();
+                
+                if (!room || !room.active) {
+                    // 聊天室已关闭
+                    addSystemMessage('⚠️ 陌生人已离开聊天');
+                    setTimeout(() => {
+                        nextStranger();
+                    }, 2000);
+                }
+            });
+        }
+
+        // 重写 sendMessage（真实发送版本）
+        const originalSendMessage = sendMessage;
+        sendMessage = function() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+            if (!checkSpamProtection()) return;
+
+            // 添加到界面
+            addMessage('你', message, true);
+            
+            // 如果 Firebase 已连接且在聊天室中
+            if (isFirebaseConnected && chatRoom) {
+                // 发送到 Firebase
+                database.ref('messages/' + chatRoom).push({
+                    senderId: currentUser.id,
+                    text: message,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            } else {
+                // 演示模式的自动回复
+                if (Math.random() < 0.3) {
+                    setTimeout(() => {
+                        showTypingIndicator();
+                        setTimeout(() => {
+                            hideTypingIndicator();
+                            addMessage('陌生人', getRandomResponse(), false);
+                        }, 1500 + Math.random() * 2000);
+                    }, 500);
+                } else {
+                    setTimeout(() => {
+                        addMessage('陌生人', getRandomResponse(), false);
+                    }, 1000 + Math.random() * 3000);
+                }
+            }
+            
+            currentUser.lastMessageTime = Date.now();
+            ANTI_SPAM.messageTimestamps.push(Date.now());
+            input.value = '';
+            updateCharCount();
+        };
+
+        // 重写 nextStranger（真实切换版本）
+        const originalNextStranger = nextStranger;
+        nextStranger = function() {
+            if (!confirm('确定要离开当前对话，寻找下一位陌生人吗？')) {
+                return;
+            }
+            
+            // 清理当前聊天室
+            if (isFirebaseConnected && chatRoom) {
+                // 移除监听
+                if (messageListener) {
+                    database.ref('messages/' + chatRoom).off('child_added', messageListener);
+                }
+                if (partnerStatusListener) {
+                    database.ref('rooms/' + chatRoom).off('value', partnerStatusListener);
+                }
+                
+                // 关闭聊天室
+                database.ref('rooms/' + chatRoom).update({ active: false });
+                chatRoom = null;
+            }
+            
+            addSystemMessage('🔄 正在为您寻找新的对话对象...');
+            
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('sendButton').disabled = true;
+            
+            setTimeout(() => {
+                clearMessages();
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendButton').disabled = false;
+                
+                // 重新配对
+                if (isFirebaseConnected) {
+                    document.getElementById('chatPage').classList.add('hidden');
+                    document.getElementById('matchingPage').classList.remove('hidden');
+                    findMatch();
+                } else {
+                    matchFound();
+                }
+            }, 2000);
+        };
+
+        // 重写 leaveChat（清理资源版本）
+        const originalLeaveChat = leaveChat;
+        leaveChat = function() {
+            if (!confirm('确定要离开聊天室吗？')) {
+                return;
+            }
+            
+            // 清理 Firebase 资源
+            if (isFirebaseConnected && chatRoom) {
+                if (messageListener) {
+                    database.ref('messages/' + chatRoom).off('child_added', messageListener);
+                }
+                if (partnerStatusListener) {
+                    database.ref('rooms/' + chatRoom).off('value', partnerStatusListener);
+                }
+                database.ref('rooms/' + chatRoom).update({ active: false });
+            }
+            
+            // 从等待列表中移除
+            if (isFirebaseConnected && currentUser.id) {
+                database.ref('waiting/' + currentUser.id).remove();
+            }
+            
+            location.reload();
+        };
+
+        // 重写 cancelMatching（清理等待版本）
+        const originalCancelMatching = cancelMatching;
+        cancelMatching = function() {
+            if (matchingState.matchTimeout) {
+                clearTimeout(matchingState.matchTimeout);
+            }
+            
+            // 从等待列表中移除
+            if (isFirebaseConnected && currentUser.id) {
+                database.ref('waiting/' + currentUser.id).remove();
+            }
+            
+            matchingState.isMatching = false;
+            location.reload();
+        };
+
+        // 页面关闭时清理
+        window.addEventListener('unload', function() {
+            if (isFirebaseConnected) {
+                if (chatRoom) {
+                    database.ref('rooms/' + chatRoom).update({ active: false });
+                }
+                if (currentUser.id) {
+                    database.ref('waiting/' + currentUser.id).remove();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
